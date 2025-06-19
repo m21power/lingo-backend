@@ -1,0 +1,4 @@
+.env
+makefile
+./migrations
+lingo-firestore.json
