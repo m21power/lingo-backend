@@ -31,32 +31,46 @@ func (r *Router) RegisterRoute() {
 		return
 	}
 
-	log.Println("Routes registered:")
-	go bot.ListenToBot(database) // Start listening to the Telegram bot
-
-	// Student endpoint
+	// otp endpoint
 	otpRepository := repository.NewOtpRepository(database)
 	otpUsecase := usecases.NewOtpUsecase(otpRepository)
 	otpHandler := handlers.NewOtpHandler(*otpUsecase)
 
 	// Define route prefix
-	otpRoutes := r.route.PathPrefix("/api/v1").Subrouter()
-	otpRoutes.HandleFunc("/otp", otpHandler.CheckOtp).Methods("POST")
+	routes := r.route.PathPrefix("/api/v1").Subrouter()
+	routes.HandleFunc("/otp", otpHandler.CheckOtp).Methods("POST")
+
+	// pair endpoint
+	pairRepository := repository.NewPairRepository(database)
+	pairUsecase := usecases.NewPairUsecase(pairRepository)
+	pairHandler := handlers.NewPairHandler(*pairUsecase)
+
+	// Define route prefix
+	routes.HandleFunc("/pair/{userId}", pairHandler.GetDailyPairs).Methods("GET")
+	routes.HandleFunc("/pair", pairHandler.UpdatePairParticipation).Methods("PUT")
+
+	log.Println("Routes registered:")
+	go bot.ListenToBot(database)
+
+	// err = service.GenerateDailyPairs(database) // we will be calling this every day at 06:00
+
+	if err != nil {
+		log.Println("Error generating daily pairs:", err)
+		// return
+	}
+
 }
 
 func (r *Router) Run(addr string) error {
 
-	// CORS configuration to allow all origins
 	corsHandler := cors.New(cors.Options{
-		AllowedOrigins: []string{"*"},                                       // Allow all origins
-		AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}, // Allowed methods
-		AllowedHeaders: []string{"Content-Type", "Authorization"},           // Allowed headers
+		AllowedOrigins: []string{"*"},
+		AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders: []string{"Content-Type", "Authorization"},
 	})
 
-	// Wrap the mux router with CORS middleware
 	handler := corsHandler.Handler(r.route)
 
-	// Run the server with CORS enabled
 	log.Println("Server running on port: ", addr)
 	return http.ListenAndServe(addr, handler)
 }
