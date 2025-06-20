@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -92,13 +91,12 @@ func ListenToBot(db *sql.DB, firestoreClient *firestore.Client) {
 
 func generateOTP(length int) int64 {
 	rand.Seed(time.Now().UnixNano())
-	otpStr := ""
-	for i := 0; i < length; i++ {
-		digit := rand.Intn(10)
-		otpStr += fmt.Sprint(digit)
+	min := int64(1)
+	for i := 1; i < length; i++ {
+		min *= 10
 	}
-	otp, _ := strconv.ParseInt(otpStr, 10, 64)
-	return otp
+	max := min*10 - 1
+	return rand.Int63n(max-min+1) + min
 }
 
 func getUserProfilePhoto(bot *tgbotapi.BotAPI, userID int64, firestoreClient *firestore.Client) string {

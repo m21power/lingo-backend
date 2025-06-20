@@ -55,7 +55,7 @@ func (r *Router) RegisterRoute() {
 	// Define route prefix
 	routes := r.route.PathPrefix("/api/v1").Subrouter()
 	routes.HandleFunc("/otp", otpHandler.CheckOtp).Methods("POST")
-
+	routes.HandleFunc("/otp/wake-up", otpHandler.WakeUpRender).Methods("GET")
 	// pair endpoint
 	pairRepository := repository.NewPairRepository(database)
 	pairUsecase := usecases.NewPairUsecase(pairRepository)

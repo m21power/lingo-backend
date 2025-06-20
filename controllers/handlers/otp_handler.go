@@ -39,3 +39,9 @@ func (h *OtpHandler) CheckOtp(w http.ResponseWriter, r *http.Request) {
 	util.WriteJSON(w, http.StatusOK, map[string]*domain.User{"user": result})
 
 }
+
+func (h *OtpHandler) WakeUpRender(w http.ResponseWriter, r *http.Request) {
+	// This is a dummy endpoint to keep the Render app awake
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("OK"))
+}
