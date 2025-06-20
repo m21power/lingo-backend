@@ -36,6 +36,6 @@ func (h *OtpHandler) CheckOtp(w http.ResponseWriter, r *http.Request) {
 		util.WriteError(w, err, http.StatusBadRequest)
 		return
 	}
-	util.WriteJSON(w, http.StatusOK, map[string]bool{"valid": result})
+	util.WriteJSON(w, http.StatusOK, map[string]*domain.User{"user": result})
 
 }

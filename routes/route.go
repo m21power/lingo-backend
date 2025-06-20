@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"context"
 	"lingo-backend/db"
 	"log"
 	"net/http"
@@ -11,8 +12,10 @@ import (
 	repository "lingo-backend/controllers/repository"
 	usecases "lingo-backend/usecase"
 
+	firebase "firebase.google.com/go/v4"
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
+	"google.golang.org/api/option"
 )
 
 type Router struct {
@@ -30,9 +33,22 @@ func (r *Router) RegisterRoute() {
 		log.Println("Cannot connect to db")
 		return
 	}
+	ctx := context.Background()
+	opt := option.WithCredentialsFile("lingo-firestore.json")
+
+	app, err := firebase.NewApp(ctx, nil, opt)
+	if err != nil {
+		log.Println("Cannot connect to firestore")
+		// return
+	}
+	client, err := app.Firestore(ctx)
+	if err != nil {
+		log.Println("Cannot connect to firestore")
+		// return
+	}
 
 	// otp endpoint
-	otpRepository := repository.NewOtpRepository(database)
+	otpRepository := repository.NewOtpRepository(database, client)
 	otpUsecase := usecases.NewOtpUsecase(otpRepository)
 	otpHandler := handlers.NewOtpHandler(*otpUsecase)
 
@@ -50,7 +66,7 @@ func (r *Router) RegisterRoute() {
 	routes.HandleFunc("/pair", pairHandler.UpdatePairParticipation).Methods("PUT")
 
 	log.Println("Routes registered:")
-	go bot.ListenToBot(database)
+	go bot.ListenToBot(database, client)
 
 	// err = service.GenerateDailyPairs(database) // we will be calling this every day at 06:00
 

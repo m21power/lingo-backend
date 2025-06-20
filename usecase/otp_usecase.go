@@ -14,6 +14,6 @@ func NewOtpUsecase(otpRepo domain.OtpRepository) *OtpUsecase {
 func (u *OtpUsecase) SaveOtp(otp domain.Otp) error {
 	return u.otpRepo.SaveOtp(otp)
 }
-func (u *OtpUsecase) CheckOtp(username string, otp int64) (bool, error) {
+func (u *OtpUsecase) CheckOtp(username string, otp int64) (*domain.User, error) {
 	return u.otpRepo.CheckOtp(username, otp)
 }

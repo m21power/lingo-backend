@@ -25,7 +25,7 @@ func ConnectDb() (*sql.DB, error) {
 		return nil, err
 	}
 	dbname := os.Getenv("DB_NAME")
-	password := os.Getenv("PASSWORD")
+	password := os.Getenv("DB_PASSWORD")
 	user := os.Getenv("DB_USER")
 	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=disable",
