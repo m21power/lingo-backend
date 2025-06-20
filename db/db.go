@@ -18,7 +18,7 @@ func ConnectDb() (*sql.DB, error) {
 	// }
 
 	host := os.Getenv("HOST")
-	port, err := strconv.Atoi(os.Getenv("PORT"))
+	port, err := strconv.Atoi(os.Getenv("DB_PORT"))
 	if err != nil {
 		log.Fatal("Error parsing port")
 		return nil, err
