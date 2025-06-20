@@ -20,18 +20,18 @@ import (
 	"cloud.google.com/go/firestore"
 	"github.com/cloudinary/cloudinary-go/v2"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"github.com/joho/godotenv"
 
 	"github.com/cloudinary/cloudinary-go/v2/api/uploader"
 )
 
 func ListenToBot(db *sql.DB, firestoreClient *firestore.Client) {
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatal("Error loading .env file")
-		return
-	}
+	// err := godotenv.Load()
+	// if err != nil {
+	// 	log.Fatal("Error loading .env file")
+	// 	return
+	// }
 	var bot *tgbotapi.BotAPI
+	var err error
 	for {
 		bot, err = tgbotapi.NewBotAPI(os.Getenv("BOT_TOKEN"))
 		if err != nil {
