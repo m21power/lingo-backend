@@ -10,6 +10,7 @@ import (
 
 	handlers "lingo-backend/controllers/handlers"
 	repository "lingo-backend/controllers/repository"
+	service "lingo-backend/service"
 	usecases "lingo-backend/usecase"
 
 	firebase "firebase.google.com/go/v4"
@@ -65,10 +66,17 @@ func (r *Router) RegisterRoute() {
 	routes.HandleFunc("/pair/{userId}", pairHandler.GetDailyPairs).Methods("GET")
 	routes.HandleFunc("/pair", pairHandler.UpdatePairParticipation).Methods("PUT")
 
+	// user endpoint
+	userRepository := repository.NewUserRepo(database, client)
+	userUsecase := usecases.NewUserUsecase(userRepository)
+	userHandler := handlers.NewUserHandler(*userUsecase)
+
+	routes.HandleFunc("/user/attendance", userHandler.FillAttendance).Methods("POST")
+
 	log.Println("Routes registered:")
 	go bot.ListenToBot(database, client)
 
-	// err = service.GenerateDailyPairs(database) // we will be calling this every day at 06:00
+	err = service.GenerateDailyPairs(database) // we will be calling this every day at 06:00
 
 	if err != nil {
 		log.Println("Error generating daily pairs:", err)

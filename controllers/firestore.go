@@ -14,10 +14,13 @@ import (
 )
 
 type User struct {
-	UserID     int64     `firestore:"userId"`
-	Username   string    `firestore:"username"`
-	ProfileURL string    `firestore:"profileUrl"`
-	CreatedAt  time.Time `firestore:"createdAt"`
+	UserID            int64     `firestore:"userId"`
+	Username          string    `firestore:"username"`
+	ProfileURL        string    `firestore:"profileUrl"`
+	MissCount         int64     `firestore:"missCount"`
+	Attendance        int64     `firestore:"attendance"`
+	ParticipatedCount int64     `firestore:"participatedCount"`
+	CreatedAt         time.Time `firestore:"createdAt"`
 }
 
 func UpsertUserToFirebase(user User) error {
@@ -47,6 +50,9 @@ func UpsertUserToFirebase(user User) error {
 		if !docSnap.Exists() {
 			// User does not exist, create with createdAt = now
 			user.CreatedAt = time.Now()
+			user.MissCount = 0
+			user.Attendance = 0
+			user.ParticipatedCount = 0
 			return tx.Set(docRef, user)
 		}
 
