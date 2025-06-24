@@ -45,15 +45,10 @@ func (r *UserRepoImpl) FillAttendance(userIds []int64) error {
 			return err
 		}
 
-		consistencyDoc := r.firestore.Collection("consistency").Doc(docID).Collection(today).Doc("daily_score")
-
-		// Use Set with Merge to create or update, so only one doc per day
+		consistencyDoc := r.firestore.Collection("consistency").Doc(docID).Collection("dates").Doc(today)
 		_, err = consistencyDoc.Set(ctx, map[string]interface{}{
 			"score": 1,
 		}, firestore.MergeAll)
-		if err != nil {
-			return err
-		}
 	}
 
 	return nil
@@ -72,15 +67,10 @@ func (r *UserRepoImpl) MissAttendance(userId int64) error {
 
 	// Get today's date string in YYYY-MM-DD format
 	today := time.Now().Format("2006-01-02")
-	consistencyDoc := r.firestore.Collection("consistency").Doc(docID).Collection(today).Doc("daily_score")
-
-	// Use Set with Merge to create or update, so only one doc per day
+	consistencyDoc := r.firestore.Collection("consistency").Doc(docID).Collection("dates").Doc(today)
 	_, err = consistencyDoc.Set(ctx, map[string]interface{}{
-		"score": 1,
+		"score": 0,
 	}, firestore.MergeAll)
-	if err != nil {
-		return err
-	}
 
 	return nil
 }
