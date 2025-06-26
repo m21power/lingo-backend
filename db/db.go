@@ -7,16 +7,15 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
 
 func ConnectDb() (*sql.DB, error) {
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatal("Error loading .env file")
-		return nil, err
-	}
+	// err := godotenv.Load()
+	// if err != nil {
+	// 	log.Fatal("Error loading .env file")
+	// 	return nil, err
+	// }
 
 	host := os.Getenv("HOST")
 	port, err := strconv.Atoi(os.Getenv("DB_PORT"))

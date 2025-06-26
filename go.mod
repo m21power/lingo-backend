@@ -7,10 +7,12 @@ require (
 	firebase.google.com/go/v4 v4.16.1
 	github.com/cloudinary/cloudinary-go/v2 v2.10.1
 	github.com/gorilla/mux v1.8.1
+	github.com/gorilla/websocket v1.5.3
 	github.com/joho/godotenv v1.5.1
 	github.com/lib/pq v1.10.9
 	github.com/rs/cors v1.11.1
 	google.golang.org/api v0.238.0
+	google.golang.org/grpc v1.73.0
 )
 
 require (
@@ -63,7 +65,6 @@ require (
 	google.golang.org/genproto v0.0.0-20250505200425-f936aa4a68b2 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250505200425-f936aa4a68b2 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250603155806-513f23925822 // indirect
-	google.golang.org/grpc v1.73.0 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
 )
 

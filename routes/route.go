@@ -55,6 +55,7 @@ func (r *Router) RegisterRoute() {
 
 	// Define route prefix
 	routes := r.route.PathPrefix("/api/v1").Subrouter()
+
 	routes.HandleFunc("/otp", otpHandler.CheckOtp).Methods("POST")
 	routes.HandleFunc("/otp/wake-up", otpHandler.WakeUpRender).Methods("GET")
 	// pair endpoint
@@ -70,6 +71,8 @@ func (r *Router) RegisterRoute() {
 	userRepository := repository.NewUserRepo(database, client)
 	userUsecase := usecases.NewUserUsecase(userRepository)
 	userHandler := handlers.NewUserHandler(*userUsecase)
+
+	routes.HandleFunc("/ws", userHandler.HandleWebSocket)
 
 	routes.HandleFunc("/user/attendance", userHandler.FillAttendance).Methods("POST")
 
