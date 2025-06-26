@@ -47,6 +47,7 @@ func (h *UserHandler) FillAttendance(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *UserHandler) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
+	log.Println("WebSocket connection received")
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println("WebSocket upgrade error:", err)
@@ -65,6 +66,7 @@ func (h *UserHandler) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleStreamToOpenRouter(conn *websocket.Conn, question string) {
+	log.Println("Handling stream to OpenRouter")
 	apiKey := os.Getenv("OPEN_ROUTER_API_KEY")
 	url := "https://openrouter.ai/api/v1/chat/completions"
 
@@ -82,6 +84,7 @@ func handleStreamToOpenRouter(conn *websocket.Conn, question string) {
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
+	log.Println("Response from OpenRouter:", resp)
 	if err != nil {
 		conn.WriteMessage(websocket.TextMessage, []byte("❌ Failed to connect to OpenRouter"))
 		return
