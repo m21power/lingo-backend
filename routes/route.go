@@ -10,7 +10,6 @@ import (
 
 	handlers "lingo-backend/controllers/handlers"
 	repository "lingo-backend/controllers/repository"
-	service "lingo-backend/service"
 	usecases "lingo-backend/usecase"
 
 	firebase "firebase.google.com/go/v4"
@@ -34,13 +33,29 @@ func (r *Router) RegisterRoute() {
 		log.Println("Cannot connect to db")
 		return
 	}
-	ctx := context.Background()
-	opt := option.WithCredentialsFile("lingo-firestore.json")
+	// ctx := context.Background()
+	// opt := option.WithCredentialsFile("lingo-firestore.json")
 
-	app, err := firebase.NewApp(ctx, nil, opt)
+	// app, err := firebase.NewApp(ctx, nil, opt)
+
+	// if err != nil {
+	// 	log.Println("Cannot connect to firestore")
+	// 	// return
+	// }
+	ctx := context.Background()
+
+	config := &firebase.Config{
+		DatabaseURL: "https://lingo-19e2a-default-rtdb.firebaseio.com/",
+	}
+
+	app, err := firebase.NewApp(ctx, config, option.WithCredentialsFile("lingo-firestore.json"))
 	if err != nil {
-		log.Println("Cannot connect to firestore")
-		// return
+		log.Fatalf("Failed to initialize Firebase app: %v", err)
+	}
+
+	_, err = app.Database(ctx)
+	if err != nil {
+		log.Fatalf("❌ Failed to connect to Realtime DB: %v", err)
 	}
 	client, err := app.Firestore(ctx)
 	if err != nil {
@@ -79,7 +94,7 @@ func (r *Router) RegisterRoute() {
 	log.Println("Routes registered:")
 	go bot.ListenToBot(database, client)
 
-	err = service.GenerateDailyPairs(database) // we will be calling this every day at 06:00
+	// err = service.GenerateDailyPairs(database, rtdbClient) // we will be calling this every day at 06:00
 
 	if err != nil {
 		log.Println("Error generating daily pairs:", err)

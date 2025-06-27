@@ -10,104 +10,87 @@ import (
 	"time"
 
 	firebase "firebase.google.com/go/v4"
+	db "firebase.google.com/go/v4/db"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 )
 
-// helper struct for the query below
 type candidate struct {
-	ID       int64
-	Username string
+	ID         int64
+	Username   string
+	ProfileURL string
 }
 type trio struct {
-	u1, u2, u3 candidate // u3.ID == 0 when not used
+	u1, u2, u3 *candidate // u3 can be nil
 }
 
-// GenerateDailyPairs groups every waiting user into pairs
-// and runs once per day (e.g. scheduled at 06:00).
-func GenerateDailyPairs(db *sql.DB) error {
-
+func GenerateDailyPairs(db *sql.DB, rtdbClient *db.Client) error {
 	ctx := context.Background()
 	opt := option.WithCredentialsFile("lingo-firestore.json")
-
 	app, err := firebase.NewApp(ctx, nil, opt)
 	if err != nil {
 		return err
 	}
-	// 1. Fetch pairing candidates from Firebase
+
 	users, err := fetchAllUsers(app)
-	if err != nil {
-		return err
-	}
-	if len(users) == 0 {
-		log.Println("No users to pair today.")
+	if err != nil || len(users) == 0 {
+		log.Println("🚫 No users to pair today.")
 		return nil
 	}
 
-	// 2️⃣ Shuffle for fairness
 	rand.Seed(time.Now().UnixNano())
 	rand.Shuffle(len(users), func(i, j int) { users[i], users[j] = users[j], users[i] })
 
-	// 3️⃣ Build pair definitions in memory
 	var groups []trio
 	for i := 0; i < len(users); i += 2 {
-		// If we only have one left, add him/her to previous pair
 		if i+1 >= len(users) {
-			if len(groups) == 0 { // impossible unless only 1 user total
-				groups = append(groups, trio{u1: candidate{ID: users[i].UserID, Username: users[i].Username}})
+			// Last odd user → make trio with previous pair
+			if len(groups) > 0 {
+				groups[len(groups)-1].u3 = &users[i]
 			} else {
-				groups[len(groups)-1].u3 = candidate{ID: users[i].UserID, Username: users[i].Username}
+				// Only one user total
+				groups = append(groups, trio{u1: &users[i]})
 			}
 			break
 		}
 		groups = append(groups, trio{
-			u1: candidate{ID: users[i].UserID, Username: users[i].Username},
-			u2: candidate{ID: users[i+1].UserID, Username: users[i+1].Username},
+			u1: &users[i],
+			u2: &users[i+1],
 		})
 	}
 
-	// 4️⃣ Insert inside a single Tx
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback() // safe even on success
-
-	insertPair := `
-	INSERT INTO pairs
-	    (user1id, user2id, user3id,
-	     username1, username2, username3,
-	     date, status)
-	VALUES ($1,$2,$3,$4,$5,$6,CURRENT_DATE,'pending')
-	RETURNING id`
-	insertPart := `
-	INSERT INTO pair_participation
-	    (pair_id, userid)
-	VALUES ($1,$2)`
+	defer tx.Rollback()
 
 	for _, g := range groups {
-		sortTrio(&g) // Sort user IDs ascending before insert
+		// Sort by ID for uniqueness
+		cleanAndSort(&g)
 
-		var pairID int64
-		if err := tx.QueryRowContext(ctx, insertPair,
-			g.u1.ID, g.u2.ID, g.u3.ID,
-			g.u1.Username, g.u2.Username, g.u3.Username,
-		).Scan(&pairID); err != nil {
-			return fmt.Errorf("insert pair: %w", err)
+		pairID := fmt.Sprintf("%d_%d", g.u1.ID, g.u2.ID)
+		if g.u3 != nil {
+			pairID += fmt.Sprintf("_%d", g.u3.ID)
 		}
 
-		// insert user1 + user2
-		if _, err := tx.ExecContext(ctx, insertPart, pairID, g.u1.ID); err != nil {
-			return err
+		_, err := tx.ExecContext(ctx, `
+			INSERT INTO pairs (id, user1id, user2id, user3id,
+				username1, username2, username3, date, status)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,CURRENT_DATE,'pending')`,
+			pairID, g.u1.ID, g.u2.ID, idOrZero(g.u3),
+			g.u1.Username, g.u2.Username, usernameOrEmpty(g.u3))
+		if err != nil {
+			return fmt.Errorf("insert pair failed: %w", err)
 		}
-		if g.u2.ID != 0 {
-			if _, err := tx.ExecContext(ctx, insertPart, pairID, g.u2.ID); err != nil {
-				return err
-			}
-		}
-		if g.u3.ID != 0 { // special‑group member
-			if _, err := tx.ExecContext(ctx, insertPart, pairID, g.u3.ID); err != nil {
-				return err
+
+		// Participation
+		for _, u := range []*candidate{g.u1, g.u2, g.u3} {
+			if u != nil {
+				if _, err := tx.ExecContext(ctx,
+					`INSERT INTO pair_participation (pair_id, userid) VALUES ($1,$2)`, pairID, u.ID); err != nil {
+					return fmt.Errorf("insert participation: %w", err)
+				}
 			}
 		}
 	}
@@ -115,48 +98,63 @@ func GenerateDailyPairs(db *sql.DB) error {
 	if err := tx.Commit(); err != nil {
 		return err
 	}
-	log.Printf("✅ Generated %d pair(s) for %s\n", len(groups), time.Now().Format("2006‑01‑02"))
+	log.Printf("✅ %d group(s) created for %s\n", len(groups), time.Now().Format("2006-01-02"))
+
+	for _, g := range groups {
+		pairID := fmt.Sprintf("%d_%d", g.u1.ID, g.u2.ID)
+		if g.u3 != nil {
+			pairID += fmt.Sprintf("_%d", g.u3.ID)
+		}
+		if err := PushPairToRealtimeDB(ctx, rtdbClient, pairID, g); err != nil {
+			return fmt.Errorf("failed to push pair %s to Realtime DB: %w", pairID, err)
+		}
+		log.Printf("✅ Pair %s pushed to Realtime DB\n", pairID)
+	}
 	return nil
 }
 
-// helper to sort trio by ID ascending
-func sortTrio(t *trio) {
-	type user struct {
-		ID       int64
-		Username string
+// Sorts trio by ID
+func cleanAndSort(t *trio) {
+	var all []*candidate
+	all = append(all, t.u1)
+	if t.u2 != nil {
+		all = append(all, t.u2)
+	}
+	if t.u3 != nil {
+		all = append(all, t.u3)
 	}
 
-	users := []user{
-		{t.u1.ID, t.u1.Username},
-		{t.u2.ID, t.u2.Username},
-	}
+	sort.Slice(all, func(i, j int) bool { return all[i].ID < all[j].ID })
 
-	// Only add u3 if present (ID != 0)
-	if t.u3.ID != 0 {
-		users = append(users, user{t.u3.ID, t.u3.Username})
+	t.u1, t.u2, t.u3 = all[0], nil, nil
+	if len(all) > 1 {
+		t.u2 = all[1]
 	}
-
-	// Sort by ID ascending
-	sort.Slice(users, func(i, j int) bool {
-		return users[i].ID < users[j].ID
-	})
-
-	// Reassign sorted values back to trio
-	t.u1.ID, t.u1.Username = users[0].ID, users[0].Username
-	t.u2.ID, t.u2.Username = users[1].ID, users[1].Username
-	if len(users) == 3 {
-		t.u3.ID, t.u3.Username = users[2].ID, users[2].Username
-	} else {
-		t.u3.ID, t.u3.Username = 0, ""
+	if len(all) > 2 {
+		t.u3 = all[2]
 	}
+}
+
+func idOrZero(c *candidate) int64 {
+	if c == nil {
+		return 0
+	}
+	return c.ID
+}
+func usernameOrEmpty(c *candidate) string {
+	if c == nil {
+		return ""
+	}
+	return c.Username
 }
 
 type FirebaseUser struct {
-	UserID   int64  `firestore:"userId"`
-	Username string `firestore:"username"`
+	UserID     int64  `firestore:"userId"`
+	Username   string `firestore:"username"`
+	ProfileURL string `firestore:"profileUrl"`
 }
 
-func fetchAllUsers(app *firebase.App) ([]FirebaseUser, error) {
+func fetchAllUsers(app *firebase.App) ([]candidate, error) {
 	ctx := context.Background()
 	client, err := app.Firestore(ctx)
 	if err != nil {
@@ -166,7 +164,7 @@ func fetchAllUsers(app *firebase.App) ([]FirebaseUser, error) {
 
 	iter := client.Collection("users").Documents(ctx)
 
-	var users []FirebaseUser
+	var users []candidate
 	for {
 		doc, err := iter.Next()
 		if err == iterator.Done {
@@ -175,12 +173,80 @@ func fetchAllUsers(app *firebase.App) ([]FirebaseUser, error) {
 		if err != nil {
 			return nil, err
 		}
-		var user FirebaseUser
-		if err := doc.DataTo(&user); err != nil {
-			continue // skip invalid entries
+		var u FirebaseUser
+		if err := doc.DataTo(&u); err != nil {
+			continue
 		}
-		users = append(users, user)
+		users = append(users, candidate{
+			ID: u.UserID, Username: u.Username, ProfileURL: u.ProfileURL,
+		})
+	}
+	return users, nil
+}
+
+func PushPairToRealtimeDB(ctx context.Context, client *db.Client, pairID string, g trio) error {
+	// Collect participants
+	participants := []*candidate{g.u1, g.u2}
+	if g.u3 != nil {
+		participants = append(participants, g.u3)
 	}
 
-	return users, nil
+	// Prepare participant data
+	var usernames []string
+	var ids []int64
+	var images []string
+	unreadCounts := map[string]int{}
+	for _, u := range participants {
+		usernames = append(usernames, u.Username)
+		ids = append(ids, u.ID)
+		images = append(images, u.ProfileURL)
+		unreadCounts[fmt.Sprintf("%d", u.ID)] = 1
+	}
+
+	// 1️⃣ Create chat metadata
+	chatData := map[string]interface{}{
+		"name":                 "Special Group",
+		"isGroup":              len(participants) == 3,
+		"participantUsernames": usernames,
+		"participantIds":       ids,
+		"participantImages":    images,
+		"lastMessage":          "You've been paired for today's conversation!",
+		"lastMessageTime":      time.Now().UnixMilli(),
+		"seenBy":               []string{},
+		"unreadCounts":         unreadCounts,
+	}
+
+	chatRef := client.NewRef("chats/" + pairID)
+	if err := chatRef.Set(ctx, chatData); err != nil {
+		return fmt.Errorf("failed to write chat: %w", err)
+	}
+
+	// 2️⃣ Add system message
+	message := map[string]interface{}{
+		"text":            "You've been paired for today's conversation!",
+		"senderName":      "admin",
+		"senderId":        1,
+		"createdAt":       time.Now().UnixMilli(),
+		"seenBy":          []string{},
+		"isSystemMessage": true,
+		"isParticipating": []string{},
+	}
+
+	msgRef, err := client.NewRef("messages/"+pairID).Push(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create message reference: %w", err)
+	}
+	if err := msgRef.Set(ctx, message); err != nil {
+		return fmt.Errorf("failed to push system message: %w", err)
+	}
+
+	// 3️⃣ Link chat to each user's chat list
+	for _, u := range participants {
+		userChatPath := fmt.Sprintf("userChats/%d/%s", u.ID, pairID)
+		if err := client.NewRef(userChatPath).Set(ctx, true); err != nil {
+			return fmt.Errorf("failed to link chat to user %d: %w", u.ID, err)
+		}
+	}
+
+	return nil
 }

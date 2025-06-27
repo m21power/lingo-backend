@@ -28,6 +28,7 @@ func NewPairHandler(usecase usecase.PairUsecase) *PairHandler {
 		usecase: usecase,
 	}
 }
+
 func (p *PairHandler) GetDailyPairs(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["userId"]
@@ -139,8 +140,10 @@ func saveChatroomToRealtimeDB(app *firebase.App, yes []User, isSpecialGroup bool
 	}
 
 	chatroom := map[string]interface{}{
-		"chatroomid":       roomID,
-		"participants":     usernames,
+		"chatid":               roomID,
+		"participantUsernames": usernames,
+		"participantIds":       ids,
+
 		"message":          message,
 		"senderid":         "admin",
 		"sendername":       "Admin Bot",
@@ -155,7 +158,7 @@ func saveChatroomToRealtimeDB(app *firebase.App, yes []User, isSpecialGroup bool
 		return err
 	}
 
-	ref := client.NewRef("chatrooms/" + roomID)
+	ref := client.NewRef("chats/" + roomID)
 	if err := ref.Set(ctx, chatroom); err != nil {
 		return fmt.Errorf("failed to save chatroom: %w", err)
 	}
