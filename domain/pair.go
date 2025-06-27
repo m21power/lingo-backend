@@ -16,5 +16,5 @@ type Pair struct {
 
 type PairRepository interface {
 	GetDailyPairs(userId int64) (Pair, error)
-	UpdatePairParticipation(pairId int64, userId int64, participating bool) error
+	UpdatePairParticipation(pairId string, userId int64, participating bool) error
 }

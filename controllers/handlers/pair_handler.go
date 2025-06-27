@@ -91,9 +91,9 @@ func (p *PairHandler) GetDailyPairs(w http.ResponseWriter, r *http.Request) {
 
 func (p *PairHandler) UpdatePairParticipation(w http.ResponseWriter, r *http.Request) {
 	type Payload struct {
-		PairID        int64 `json:"pairId"`
-		UserID        int64 `json:"userId"`
-		Participating bool  `json:"participating"`
+		PairID        string `json:"pairId"`
+		UserID        int64  `json:"userId"`
+		Participating bool   `json:"participating"`
 	}
 	var payload Payload
 	err := json.NewDecoder(r.Body).Decode(&payload)

@@ -51,7 +51,7 @@ func (s *PairRepositoryImpl) GetDailyPairs(userId int64) (domain.Pair, error) {
 	return pair, nil
 }
 
-func (s *PairRepositoryImpl) UpdatePairParticipation(pairId int64, userId int64, participating bool) error {
+func (s *PairRepositoryImpl) UpdatePairParticipation(pairId string, userId int64, participating bool) error {
 	query := `
 	INSERT INTO pair_participation (pair_id, userid, is_participating)
 	VALUES ($1, $2, $3)

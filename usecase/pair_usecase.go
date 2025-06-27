@@ -15,6 +15,6 @@ func NewPairUsecase(repository domain.PairRepository) *PairUsecase {
 func (u *PairUsecase) GetDailyPairs(userId int64) (domain.Pair, error) {
 	return u.repository.GetDailyPairs(userId)
 }
-func (u *PairUsecase) UpdatePairParticipation(pairId int64, userId int64, participating bool) error {
+func (u *PairUsecase) UpdatePairParticipation(pairId string, userId int64, participating bool) error {
 	return u.repository.UpdatePairParticipation(pairId, userId, participating)
 }
