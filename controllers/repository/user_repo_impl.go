@@ -97,7 +97,9 @@ func (r *UserRepoImpl) PairUser(userId int64, username, profileUrl string) (util
 	} else if err != nil {
 		return util.PairResponse{}, fmt.Errorf("failed to query waitlist: %w", err)
 	}
-
+	if otherUserId == userId {
+		return util.PairResponse{Wait: true}, nil
+	}
 	//  Found someone! Remove them from waitlist
 	_, err = r.db.Exec("DELETE FROM waitlist WHERE id = $1", waitlistId)
 	if err != nil {
