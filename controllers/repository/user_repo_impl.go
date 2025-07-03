@@ -3,22 +3,28 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"lingo-backend/domain"
+	util "lingo-backend/utils"
 	"strconv"
 	"time"
 
 	"cloud.google.com/go/firestore"
+	"firebase.google.com/go/v4/db"
 	"github.com/lib/pq"
 )
 
 type UserRepoImpl struct {
-	db        *sql.DB
-	firestore *firestore.Client
+	db         *sql.DB
+	firestore  *firestore.Client
+	rtdbClient *db.Client
 }
 
-func NewUserRepo(db *sql.DB, firestore *firestore.Client) *UserRepoImpl {
+func NewUserRepo(db *sql.DB, firestore *firestore.Client, rtdbClient *db.Client) *UserRepoImpl {
 	return &UserRepoImpl{
-		db:        db,
-		firestore: firestore,
+		db:         db,
+		firestore:  firestore,
+		rtdbClient: rtdbClient,
 	}
 }
 
@@ -72,5 +78,167 @@ func (r *UserRepoImpl) MissAttendance(userId int64) error {
 		"score": 0,
 	}, firestore.MergeAll)
 
+	return nil
+}
+
+func (r *UserRepoImpl) PairUser(userId int64, username, profileUrl string) (util.PairResponse, error) {
+	ctx := context.Background()
+
+	// Check if someone is already waiting
+	var waitlistId, otherUserId int64
+	var otherUsername, otherProfileUrl string
+
+	row := r.db.QueryRow("SELECT id, userid, username, profileurl FROM waitlist ORDER BY createdAt LIMIT 1")
+	err := row.Scan(&waitlistId, &otherUserId, &otherUsername, &otherProfileUrl)
+	if err == sql.ErrNoRows {
+		// No one waiting, insert this user into waitlist
+		_, err := r.db.Exec("INSERT INTO waitlist (userid, username, profileurl) VALUES ($1, $2, $3)", userId, username, profileUrl)
+		return util.PairResponse{Wait: true}, err
+	} else if err != nil {
+		return util.PairResponse{}, fmt.Errorf("failed to query waitlist: %w", err)
+	}
+
+	//  Found someone! Remove them from waitlist
+	_, err = r.db.Exec("DELETE FROM waitlist WHERE id = $1", waitlistId)
+	if err != nil {
+		return util.PairResponse{}, err
+	}
+
+	//  Create chatId based on sorted user IDs
+	var chatId string
+	if userId < otherUserId {
+		chatId = fmt.Sprintf("%d_%d", userId, otherUserId)
+	} else {
+		chatId = fmt.Sprintf("%d_%d", otherUserId, userId)
+	}
+
+	//  Prepare chat data
+	participants := []struct {
+		ID         int64
+		Username   string
+		ProfileURL string
+	}{
+		{ID: userId, Username: username, ProfileURL: profileUrl},
+		{ID: otherUserId, Username: otherUsername, ProfileURL: otherProfileUrl},
+	}
+
+	var usernames []string
+	var ids []int64
+	var images []string
+	unreadCounts := map[string]int{}
+	for _, u := range participants {
+		usernames = append(usernames, u.Username)
+		ids = append(ids, u.ID)
+		images = append(images, u.ProfileURL)
+		unreadCounts[fmt.Sprintf("%d", u.ID)] = 1
+	}
+
+	chatData := map[string]interface{}{
+		"name":                 "Daily Match",
+		"isGroup":              false,
+		"participantUsernames": usernames,
+		"participantIds":       ids,
+		"participantImages":    images,
+		"lastMessage":          "You've been paired for today's conversation!",
+		"lastMessageTime":      time.Now().UnixMilli(),
+		"seenBy":               []string{},
+		"unreadCounts":         unreadCounts,
+	}
+
+	// Write to Firebase Realtime DB
+	chatRef := r.rtdbClient.NewRef("chats/" + chatId)
+	if err := chatRef.Set(ctx, chatData); err != nil {
+		return util.PairResponse{}, fmt.Errorf("failed to write chat: %w", err)
+	}
+
+	// Add system message to messages
+	message := map[string]interface{}{
+		"text":            "You've been paired for today's conversation!",
+		"senderName":      "admin",
+		"senderId":        1,
+		"createdAt":       time.Now().UnixMilli(),
+		"seenBy":          []string{},
+		"isSystemMessage": true,
+		"isParticipating": []string{},
+	}
+
+	msgRef, err := r.rtdbClient.NewRef("messages/"+chatId).Push(ctx, nil)
+	if err != nil {
+		return util.PairResponse{}, fmt.Errorf("failed to create message reference: %w", err)
+	}
+	if err := msgRef.Set(ctx, message); err != nil {
+		return util.PairResponse{}, fmt.Errorf("failed to push system message: %w", err)
+	}
+
+	//  Link chat to each user's chat list
+	for _, u := range participants {
+		userChatPath := fmt.Sprintf("userChats/%d/%s", u.ID, chatId)
+		if err := r.rtdbClient.NewRef(userChatPath).Set(ctx, true); err != nil {
+			return util.PairResponse{}, fmt.Errorf("failed to link chat to user %d: %w", u.ID, err)
+		}
+	}
+	// we will be emitting through websocket here and also save the notification in notifications table
+	que := "INSERT INTO notifications (id, user1id, user2id, message, createdat) VALUES ($1, $2, $3, $4, $5)"
+	_, err = r.db.Exec(que, chatId, userId, otherUserId, "You've been paired for today's conversation!", time.Now())
+	if err != nil {
+		return util.PairResponse{}, fmt.Errorf("failed to insert notification: %w", err)
+	}
+	return util.PairResponse{Wait: false}, nil
+}
+
+func (r *UserRepoImpl) GetNotifications(userId int64) ([]domain.Notificaion, error) {
+	query := `
+SELECT 
+    n.id,
+    n.user1id,
+    n.user2id,
+    n.message,
+    n.createdat,
+    CASE 
+        WHEN ns.userId IS NULL THEN false
+        ELSE true
+    END AS seen
+FROM notifications n
+LEFT JOIN notification_seen ns 
+    ON n.id = ns.notificationId AND ns.userId = $1
+WHERE n.user1id = $1 OR n.user2id = $1
+ORDER BY n.createdat DESC;
+`
+	rows, err := r.db.Query(query, userId)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query notifications: %w", err)
+	}
+	defer rows.Close()
+
+	var notifications []domain.Notificaion
+	for rows.Next() {
+		var notification domain.Notificaion
+		if err := rows.Scan(
+			&notification.ID,
+			&notification.User1ID,
+			&notification.User2ID,
+			&notification.Message,
+			&notification.CreatedAt,
+			&notification.Seen,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan notification: %w", err)
+		}
+		notifications = append(notifications, notification)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating over notifications: %w", err)
+	}
+	return notifications, nil
+}
+
+func (r *UserRepoImpl) SeenNotification(userId int64) error {
+	query := `INSERT INTO notification_seen (notificationId, userId)
+SELECT id, $1 FROM notifications
+WHERE user1id = $1 OR user2id = $1
+ON CONFLICT (notificationId, userId) DO NOTHING;`
+	_, err := r.db.Exec(query, userId)
+	if err != nil {
+		return fmt.Errorf("failed to mark notification as seen: %w", err)
+	}
 	return nil
 }

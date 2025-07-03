@@ -214,6 +214,7 @@ func PushPairToRealtimeDB(ctx context.Context, client *db.Client, pairID string,
 		"lastMessageTime":      time.Now().UnixMilli(),
 		"seenBy":               []string{},
 		"unreadCounts":         unreadCounts,
+		"generatedAt":          time.Now().UnixMilli(),
 	}
 
 	chatRef := client.NewRef("chats/" + pairID)

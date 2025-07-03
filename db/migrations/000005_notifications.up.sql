@@ -1,0 +1,7 @@
+CREATE TABLE notifications(
+    id VARCHAR(255) PRIMARY KEY,
+    user1Id BIGINT NOT NULL,
+    user2Id BIGINT NOT NULL,
+    message TEXT NOT NULL,
+    createdAt TIMESTAMP NOT NULL DEFAULT NOW()
+);

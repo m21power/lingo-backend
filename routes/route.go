@@ -53,7 +53,7 @@ func (r *Router) RegisterRoute() {
 		log.Fatalf("Failed to initialize Firebase app: %v", err)
 	}
 
-	_, err = app.Database(ctx)
+	rtdbClient, err := app.Database(ctx)
 	if err != nil {
 		log.Fatalf("❌ Failed to connect to Realtime DB: %v", err)
 	}
@@ -83,13 +83,16 @@ func (r *Router) RegisterRoute() {
 	routes.HandleFunc("/pair", pairHandler.UpdatePairParticipation).Methods("PUT")
 
 	// user endpoint
-	userRepository := repository.NewUserRepo(database, client)
+	userRepository := repository.NewUserRepo(database, client, rtdbClient)
 	userUsecase := usecases.NewUserUsecase(userRepository)
 	userHandler := handlers.NewUserHandler(*userUsecase)
 
-	routes.HandleFunc("/ws", userHandler.HandleWebSocket)
+	// routes.HandleFunc("/ws", userHandler.HandleWebSocket)
 
 	routes.HandleFunc("/user/attendance", userHandler.FillAttendance).Methods("POST")
+	routes.HandleFunc("/user/pair", userHandler.PairUser).Methods("POST")
+	routes.HandleFunc("/user/notifications/{userId}", userHandler.GetNotifications).Methods("GET")
+	routes.HandleFunc("/user/seen-notification/{userId}", userHandler.SeenNotification).Methods("POST")
 
 	log.Println("Routes registered:")
 	go bot.ListenToBot(database, client)

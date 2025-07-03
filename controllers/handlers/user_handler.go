@@ -1,15 +1,14 @@
 package handlers
 
 import (
-	"bufio"
-	"bytes"
 	"encoding/json"
+	"lingo-backend/domain"
 	"lingo-backend/usecase"
 	util "lingo-backend/utils"
-	"log"
 	"net/http"
-	"os"
+	"strconv"
 
+	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 )
 
@@ -45,73 +44,61 @@ func (h *UserHandler) FillAttendance(w http.ResponseWriter, r *http.Request) {
 	util.WriteJSON(w, http.StatusOK, map[string]string{"message": "Attendance filled successfully"})
 
 }
+func (h *UserHandler) PairUser(w http.ResponseWriter, r *http.Request) {
+	type PairUserRequest struct {
+		UserId     int64  `json:"userId"`
+		Username   string `json:"username"`
+		ProfileUrl string `json:"profileUrl"`
+	}
 
-func (h *UserHandler) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
-	log.Println("WebSocket connection received")
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Println("WebSocket upgrade error:", err)
+	var pairUserReq PairUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&pairUserReq); err != nil {
+		util.WriteError(w, err, http.StatusBadRequest)
 		return
 	}
-	defer conn.Close()
-
-	for {
-		_, msg, err := conn.ReadMessage()
-		if err != nil {
-			log.Println("Read error:", err)
-			break
-		}
-		go handleStreamToOpenRouter(conn, string(msg))
+	resp, err := h.usecase.PairUser(pairUserReq.UserId, pairUserReq.Username, pairUserReq.ProfileUrl)
+	if err != nil {
+		util.WriteError(w, err, http.StatusInternalServerError)
+		return
 	}
+	if resp.Wait {
+		util.WriteJSON(w, http.StatusOK, map[string]bool{"wait": true})
+		return
+	}
+	util.WriteJSON(w, http.StatusOK, map[string]bool{"wait": false})
+}
+func (h *UserHandler) GetNotifications(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	value := vars["userId"]
+	println("value:", value)
+	userId, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		util.WriteError(w, err, http.StatusBadRequest)
+		return
+	}
+	notifications, err := h.usecase.GetNotifications(userId)
+	if err != nil {
+		util.WriteError(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	util.WriteJSON(w, http.StatusOK, map[string][]domain.Notificaion{
+		"notifications": notifications,
+	})
 }
 
-func handleStreamToOpenRouter(conn *websocket.Conn, question string) {
-	log.Println("Handling stream to OpenRouter")
-	apiKey := os.Getenv("OPEN_ROUTER_API_KEY")
-	url := "https://openrouter.ai/api/v1/chat/completions"
-
-	payload := map[string]interface{}{
-		"model": "openai/gpt-4o",
-		"messages": []map[string]string{
-			{"role": "user", "content": question},
-		},
-		"stream": true,
-	}
-	body, _ := json.Marshal(payload)
-
-	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(body))
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	log.Println("Response from OpenRouter:", resp)
+func (h *UserHandler) SeenNotification(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	value := vars["userId"]
+	userId, err := strconv.ParseInt(value, 10, 64)
 	if err != nil {
-		conn.WriteMessage(websocket.TextMessage, []byte("❌ Failed to connect to OpenRouter"))
+		util.WriteError(w, err, http.StatusBadRequest)
 		return
 	}
-	defer resp.Body.Close()
-
-	reader := bufio.NewReader(resp.Body)
-	for {
-		line, err := reader.ReadBytes('\n')
-		if err != nil {
-			break
-		}
-
-		if bytes.HasPrefix(line, []byte("data: ")) {
-			data := bytes.TrimPrefix(line, []byte("data: "))
-			if bytes.Contains(data, []byte("[DONE]")) {
-				break
-			}
-
-			var jsonData map[string]interface{}
-			if err := json.Unmarshal(data, &jsonData); err == nil {
-				choices := jsonData["choices"].([]interface{})
-				delta := choices[0].(map[string]interface{})["delta"].(map[string]interface{})
-				if content, ok := delta["content"].(string); ok {
-					conn.WriteMessage(websocket.TextMessage, []byte(content))
-				}
-			}
-		}
+	err = h.usecase.SeenNotification(userId)
+	if err != nil {
+		util.WriteError(w, err, http.StatusInternalServerError)
+		return
 	}
+	util.WriteJSON(w, http.StatusOK, map[string]string{"message": "Notifications marked as seen"})
 }

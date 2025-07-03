@@ -1,0 +1,2 @@
+ALTER TABLE notification_seen DROP CONSTRAINT notification_seen_notificationid_fkey;
+DROP TABLE notification_seen;

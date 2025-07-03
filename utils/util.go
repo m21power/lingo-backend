@@ -19,3 +19,7 @@ func WriteError(w http.ResponseWriter, err error, status int) {
 	}
 	json.NewEncoder(w).Encode(response)
 }
+
+type PairResponse struct {
+	Wait bool `json:"wait"`
+}
