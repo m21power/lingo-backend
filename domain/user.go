@@ -10,10 +10,15 @@ type Notificaion struct {
 	Seen      bool   `json:"seen" db:"seen"`
 	CreatedAt string `json:"createdAt" db:"createdat"`
 }
+type NotificationResponse struct {
+	Notifications []Notificaion `json:"notifications"`
+	IsWaiting     bool          `json:"isWaiting"`
+}
+
 type UserRepository interface {
 	FillAttendance(userIds []int64) error
 	MissAttendance(userId int64) error
 	PairUser(userId int64, username string, profileUrl string) (util.PairResponse, error)
-	GetNotifications(userId int64) ([]Notificaion, error)
+	GetNotifications(userId int64) (NotificationResponse, error)
 	SeenNotification(userId int64) error
 }

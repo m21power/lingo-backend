@@ -82,7 +82,7 @@ func (h *UserHandler) GetNotifications(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	util.WriteJSON(w, http.StatusOK, map[string][]domain.Notificaion{
+	util.WriteJSON(w, http.StatusOK, map[string]domain.NotificationResponse{
 		"notifications": notifications,
 	})
 }

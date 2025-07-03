@@ -27,7 +27,7 @@ func (u *UserUsecase) PairUser(userId int64, username string, profileUrl string)
 	return u.userRepo.PairUser(userId, username, profileUrl)
 }
 
-func (u *UserUsecase) GetNotifications(userId int64) ([]domain.Notificaion, error) {
+func (u *UserUsecase) GetNotifications(userId int64) (domain.NotificationResponse, error) {
 	return u.userRepo.GetNotifications(userId)
 }
 

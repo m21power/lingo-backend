@@ -186,7 +186,7 @@ func (r *UserRepoImpl) PairUser(userId int64, username, profileUrl string) (util
 	return util.PairResponse{Wait: false}, nil
 }
 
-func (r *UserRepoImpl) GetNotifications(userId int64) ([]domain.Notificaion, error) {
+func (r *UserRepoImpl) GetNotifications(userId int64) (domain.NotificationResponse, error) {
 	query := `
 SELECT 
     n.id,
@@ -206,7 +206,7 @@ ORDER BY n.createdat DESC;
 `
 	rows, err := r.db.Query(query, userId)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query notifications: %w", err)
+		return domain.NotificationResponse{}, fmt.Errorf("failed to query notifications: %w", err)
 	}
 	defer rows.Close()
 
@@ -221,14 +221,20 @@ ORDER BY n.createdat DESC;
 			&notification.CreatedAt,
 			&notification.Seen,
 		); err != nil {
-			return nil, fmt.Errorf("failed to scan notification: %w", err)
+			return domain.NotificationResponse{}, fmt.Errorf("failed to scan notification: %w", err)
 		}
 		notifications = append(notifications, notification)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating over notifications: %w", err)
+		return domain.NotificationResponse{}, fmt.Errorf("error iterating over notifications: %w", err)
 	}
-	return notifications, nil
+	query = `SELECT COUNT(*) FROM waitlist WHERE userid = $1`
+	var isWaiting bool
+	err = r.db.QueryRow(query, userId).Scan(&isWaiting)
+	if err != nil {
+		return domain.NotificationResponse{}, fmt.Errorf("failed to check if user is waiting: %w", err)
+	}
+	return domain.NotificationResponse{Notifications: notifications, IsWaiting: isWaiting}, nil
 }
 
 func (r *UserRepoImpl) SeenNotification(userId int64) error {
