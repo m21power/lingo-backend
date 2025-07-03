@@ -141,7 +141,7 @@ func (r *UserRepoImpl) PairUser(userId int64, username, profileUrl string) (util
 		"participantUsernames": usernames,
 		"participantIds":       ids,
 		"participantImages":    images,
-		"lastMessage":          "You've been paired for today's conversation!",
+		"lastMessage":          "As per your request, you have been paired. Please check your messages.",
 		"lastMessageTime":      time.Now().UnixMilli(),
 		"seenBy":               []string{},
 		"unreadCounts":         unreadCounts,
