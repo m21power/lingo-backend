@@ -66,13 +66,14 @@ func GenerateDailyPairs(db *sql.DB, rtdbClient *db.Client) (string, error) {
 	defer tx.Rollback()
 
 	for _, g := range groups {
-		// Sort by ID for uniqueness
-		cleanAndSort(&g)
+		// // Sort by ID for uniqueness
+		// cleanAndSort(&g)
 
-		pairID := fmt.Sprintf("%d_%d", g.u1.ID, g.u2.ID)
-		if g.u3 != nil {
-			pairID += fmt.Sprintf("_%d", g.u3.ID)
-		}
+		// pairID := fmt.Sprintf("%d_%d", g.u1.ID, g.u2.ID)
+		// if g.u3 != nil {
+		// 	pairID += fmt.Sprintf("_%d", g.u3.ID)
+		// }
+		pairID := generatePairID(&g)
 
 		_, err := tx.ExecContext(ctx, `
 			INSERT INTO pairs (id, user1id, user2id, user3id,
@@ -101,16 +102,27 @@ func GenerateDailyPairs(db *sql.DB, rtdbClient *db.Client) (string, error) {
 	log.Printf("✅ %d group(s) created for %s\n", len(groups), time.Now().Format("2006-01-02"))
 
 	for _, g := range groups {
-		pairID := fmt.Sprintf("%d_%d", g.u1.ID, g.u2.ID)
-		if g.u3 != nil {
-			pairID += fmt.Sprintf("_%d", g.u3.ID)
-		}
+		// pairID := fmt.Sprintf("%d_%d", g.u1.ID, g.u2.ID)
+		// if g.u3 != nil {
+		// 	pairID += fmt.Sprintf("_%d", g.u3.ID)
+		// }
+		pairID := generatePairID(&g)
+
 		if err := PushPairToRealtimeDB(ctx, rtdbClient, pairID, g); err != nil {
 			return "", fmt.Errorf("failed to push pair %s to Realtime DB: %w", pairID, err)
 		}
 		log.Printf("✅ Pair %s pushed to Realtime DB\n", pairID)
 	}
 	return fmt.Sprintf("✅ %d group(s) created for %s", len(groups), time.Now().Format("2006-01-02")), nil
+}
+
+func generatePairID(t *trio) string {
+	cleanAndSort(t)
+	id := fmt.Sprintf("%d_%d", t.u1.ID, t.u2.ID)
+	if t.u3 != nil {
+		id += fmt.Sprintf("_%d", t.u3.ID)
+	}
+	return id
 }
 
 // Sorts trio by ID
