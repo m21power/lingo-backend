@@ -102,3 +102,12 @@ func (h *UserHandler) SeenNotification(w http.ResponseWriter, r *http.Request) {
 	}
 	util.WriteJSON(w, http.StatusOK, map[string]string{"message": "Notifications marked as seen"})
 }
+
+func (h *UserHandler) GeneratePair(w http.ResponseWriter, r *http.Request) {
+	message, err := h.usecase.GeneratePair()
+	if err != nil {
+		util.WriteError(w, err, http.StatusInternalServerError)
+		return
+	}
+	util.WriteJSON(w, http.StatusOK, map[string]string{"message": message})
+}

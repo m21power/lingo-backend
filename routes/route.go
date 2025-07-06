@@ -93,11 +93,10 @@ func (r *Router) RegisterRoute() {
 	routes.HandleFunc("/user/pair", userHandler.PairUser).Methods("POST")
 	routes.HandleFunc("/user/notifications/{userId}", userHandler.GetNotifications).Methods("GET")
 	routes.HandleFunc("/user/seen-notification/{userId}", userHandler.SeenNotification).Methods("POST")
+	routes.HandleFunc("/user/generate-pair", userHandler.GeneratePair).Methods("POST")
 
 	log.Println("Routes registered:")
 	go bot.ListenToBot(database, client)
-
-	// err = service.GenerateDailyPairs(database, rtdbClient) // we will be calling this every day at 06:00
 
 	if err != nil {
 		log.Println("Error generating daily pairs:", err)

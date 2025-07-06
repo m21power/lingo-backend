@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"lingo-backend/domain"
+	services "lingo-backend/service"
 	util "lingo-backend/utils"
 	"strconv"
 	"time"
@@ -38,8 +39,8 @@ func (r *UserRepoImpl) FillAttendance(userIds []int64) error {
 		return err
 	}
 
-	// Get today's date string in YYYY-MM-DD format
-	today := time.Now().Format("2006-01-02")
+	// Get yesterday's date string in YYYY-MM-DD format
+	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
 
 	for _, userId := range userIds {
 		docID := strconv.FormatInt(userId, 10)
@@ -51,7 +52,7 @@ func (r *UserRepoImpl) FillAttendance(userIds []int64) error {
 			return err
 		}
 
-		consistencyDoc := r.firestore.Collection("consistency").Doc(docID).Collection("dates").Doc(today)
+		consistencyDoc := r.firestore.Collection("consistency").Doc(docID).Collection("dates").Doc(yesterday)
 		_, err = consistencyDoc.Set(ctx, map[string]interface{}{
 			"score": 1,
 		}, firestore.MergeAll)
@@ -71,9 +72,9 @@ func (r *UserRepoImpl) MissAttendance(userId int64) error {
 		return err
 	}
 
-	// Get today's date string in YYYY-MM-DD format
-	today := time.Now().Format("2006-01-02")
-	consistencyDoc := r.firestore.Collection("consistency").Doc(docID).Collection("dates").Doc(today)
+	// Get yesterday's date string in YYYY-MM-DD format
+	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	consistencyDoc := r.firestore.Collection("consistency").Doc(docID).Collection("dates").Doc(yesterday)
 	_, err = consistencyDoc.Set(ctx, map[string]interface{}{
 		"score": 0,
 	}, firestore.MergeAll)
@@ -249,4 +250,81 @@ ON CONFLICT (notificationId, userId) DO NOTHING;`
 		return fmt.Errorf("failed to mark notification as seen: %w", err)
 	}
 	return nil
+}
+
+func (r *UserRepoImpl) GeneratePair() (string, error) {
+	// STEP 1: Fetch all pending pairs
+	rows, err := r.db.Query(`SELECT id FROM pairs WHERE status = 'pending'`)
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch pending pairs: %w", err)
+	}
+	defer rows.Close()
+
+	var pairIDs []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return "", err
+		}
+		pairIDs = append(pairIDs, id)
+	}
+
+	// STEP 2: Check participation
+	for _, pairID := range pairIDs {
+		rows2, err := r.db.Query(`
+			SELECT userid, is_participating FROM pair_participation 
+			WHERE pair_id = $1
+		`, pairID)
+		if err != nil {
+			return "", fmt.Errorf("error checking participation for pair %s: %w", pairID, err)
+		}
+		defer rows2.Close()
+
+		for rows2.Next() {
+			var userID int64
+			var isParticipating sql.NullBool
+			if err := rows2.Scan(&userID, &isParticipating); err != nil {
+				return "", err
+			}
+
+			if isParticipating.Valid && isParticipating.Bool {
+				r.FillAttendance([]int64{userID})
+				fmt.Printf("✅ User %d attended in pair %s\n", userID, pairID)
+			} else {
+				r.MissAttendance(userID)
+				fmt.Printf("❌ User %d missed in pair %s\n", userID, pairID)
+			}
+		}
+	}
+
+	// STEP 3: Delete all old data (cleanup)
+	_, err = r.db.Exec(`DELETE FROM pair_participation`)
+	if err != nil {
+		return "", fmt.Errorf("failed to clear pair_participation: %w", err)
+	}
+
+	_, err = r.db.Exec(`DELETE FROM pairs`)
+	if err != nil {
+		return "", fmt.Errorf("failed to clear pairs: %w", err)
+	}
+	_, err = r.db.Exec(`DELETE FROM waitlist`)
+	if err != nil {
+		return "", fmt.Errorf("failed to clear waitlist: %w", err)
+	}
+	_, err = r.db.Exec(`DELETE FROM notification_seen`)
+	if err != nil {
+		return "", fmt.Errorf("failed to clear notification_seen: %w", err)
+	}
+	_, err = r.db.Exec(`DELETE FROM notifications`)
+	if err != nil {
+		return "", fmt.Errorf("failed to clear notifications: %w", err)
+	}
+
+	// STEP 4: Generate new pairs
+	message, err := services.GenerateDailyPairs(r.db, r.rtdbClient)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate daily pairs: %w", err)
+	}
+
+	return message, nil
 }

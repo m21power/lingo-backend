@@ -21,4 +21,5 @@ type UserRepository interface {
 	PairUser(userId int64, username string, profileUrl string) (util.PairResponse, error)
 	GetNotifications(userId int64) (NotificationResponse, error)
 	SeenNotification(userId int64) error
+	GeneratePair() (string, error)
 }

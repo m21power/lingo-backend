@@ -34,3 +34,6 @@ func (u *UserUsecase) GetNotifications(userId int64) (domain.NotificationRespons
 func (u *UserUsecase) SeenNotification(userId int64) error {
 	return u.userRepo.SeenNotification(userId)
 }
+func (u *UserUsecase) GeneratePair() (string, error) {
+	return u.userRepo.GeneratePair()
+}

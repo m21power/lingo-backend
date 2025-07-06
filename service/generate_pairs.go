@@ -24,18 +24,18 @@ type trio struct {
 	u1, u2, u3 *candidate // u3 can be nil
 }
 
-func GenerateDailyPairs(db *sql.DB, rtdbClient *db.Client) error {
+func GenerateDailyPairs(db *sql.DB, rtdbClient *db.Client) (string, error) {
 	ctx := context.Background()
 	opt := option.WithCredentialsFile("lingo-firestore.json")
 	app, err := firebase.NewApp(ctx, nil, opt)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	users, err := fetchAllUsers(app)
 	if err != nil || len(users) == 0 {
 		log.Println("🚫 No users to pair today.")
-		return nil
+		return "", nil
 	}
 
 	rand.Seed(time.Now().UnixNano())
@@ -61,7 +61,7 @@ func GenerateDailyPairs(db *sql.DB, rtdbClient *db.Client) error {
 
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer tx.Rollback()
 
@@ -81,7 +81,7 @@ func GenerateDailyPairs(db *sql.DB, rtdbClient *db.Client) error {
 			pairID, g.u1.ID, g.u2.ID, idOrZero(g.u3),
 			g.u1.Username, g.u2.Username, usernameOrEmpty(g.u3))
 		if err != nil {
-			return fmt.Errorf("insert pair failed: %w", err)
+			return "", fmt.Errorf("insert pair failed: %w", err)
 		}
 
 		// Participation
@@ -89,14 +89,14 @@ func GenerateDailyPairs(db *sql.DB, rtdbClient *db.Client) error {
 			if u != nil {
 				if _, err := tx.ExecContext(ctx,
 					`INSERT INTO pair_participation (pair_id, userid) VALUES ($1,$2)`, pairID, u.ID); err != nil {
-					return fmt.Errorf("insert participation: %w", err)
+					return "", fmt.Errorf("insert participation: %w", err)
 				}
 			}
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
-		return err
+		return "", err
 	}
 	log.Printf("✅ %d group(s) created for %s\n", len(groups), time.Now().Format("2006-01-02"))
 
@@ -106,11 +106,11 @@ func GenerateDailyPairs(db *sql.DB, rtdbClient *db.Client) error {
 			pairID += fmt.Sprintf("_%d", g.u3.ID)
 		}
 		if err := PushPairToRealtimeDB(ctx, rtdbClient, pairID, g); err != nil {
-			return fmt.Errorf("failed to push pair %s to Realtime DB: %w", pairID, err)
+			return "", fmt.Errorf("failed to push pair %s to Realtime DB: %w", pairID, err)
 		}
 		log.Printf("✅ Pair %s pushed to Realtime DB\n", pairID)
 	}
-	return nil
+	return fmt.Sprintf("✅ %d group(s) created for %s", len(groups), time.Now().Format("2006-01-02")), nil
 }
 
 // Sorts trio by ID
